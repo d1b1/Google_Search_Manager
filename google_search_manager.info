@@ -1,0 +1,3 @@
+name = Google Search Manager
+description = Provides an interface for google searches
+core = 6.x

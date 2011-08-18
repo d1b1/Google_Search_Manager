@@ -1,0 +1,123 @@
+<?php 
+
+function google_search_manager_menu() {
+
+  $items = array();
+  
+  $items['google/search'] = array(
+    'title' => 'Google Search Manager',
+    'description' => 'Provides a starting point to understand the google custom search engine.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('google_search_manager_form'),
+    'access arguments' => array('administer site configuration'),
+  );
+  
+  return $items;
+}
+
+function google_search_manager_form($form_state) {
+
+  $form = array();
+
+  $def = '';
+  if (isset($form_state['values']['filter'])) {
+    $def = $form_state['values']['filter'];
+  }
+  
+  $form['filter'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Input',
+    '#default_value' => $def
+  );
+
+  $form['go'] = array(
+    '#type'  => 'submit',
+    '#value' => 'Submit'
+  );
+  
+  if (isset($form_state['storage']['json_output'])) {
+  
+    $form['process'] = array(
+      '#type'  => 'submit',
+      '#value' => 'Process'
+    );
+  
+    $form['results'] = array(
+      '#value' => $form_state['storage']['json_output'],
+    );
+    
+    $form['result_json'] = array(
+      '#type' => 'textarea',
+      '#title' => 'JSON',
+      '#rows' => 20,
+      '#default_value' => print_r($form_state['storage']['json_object'], TRUE),
+    );
+  
+  }
+
+  return $form;
+}
+
+function google_search_manager_form_submit($form, &$form_state) {
+
+  $clicked_button = $form_state['clicked_button']['#value'];
+  
+  if ($clicked_button=='Process') {
+     
+    $json = $form_state['storage']['json_object'];
+    
+    if (!empty($json)) {
+    foreach ($json->items as $idx => $item) {
+
+      $sql = "select 1 from {google_search_results} where cacheid = '%s'";
+      $has = db_result(db_query($sql, $item->cacheId));
+      
+      if (empty($has)) {
+        dsm($item->cacheId . ' New and Inserting');
+        $sql = "insert into {google_search_results} ( cacheid, json ) values ( '%s', '%s' )";
+        db_query($sql, $item->cacheId, serialize($item) );
+      }
+      else {
+        dsm($item->cacheId . ' Found');
+      }
+    }
+    }
+
+  }
+  
+  if ($clicked_button=='Submit') {
+
+    $url    = "https://www.googleapis.com/customsearch/v1";
+    $key    = "AIzaSyD8lJ7PX0clyNDGqzgKApjipSyO9vcrYSc&cx=015605948375668858467:c-fm3aos4zi";  
+    $filter = str_replace(' ', '+', $form_state['values']['filter']);
+  
+    $val = "$url?key=$key&q=$filter";
+  
+    dsm($val);
+    
+    $d = drupal_http_request($val, array( 'Content-Type' => 'application/json'), 'GET', NULL, 1);
+
+    $data = $d->data;
+    $json = json_decode($data);
+  
+    if (empty($json->items)) {
+       dsm('No items found');
+       
+       unset($form_state['storage']['json_output']);
+       unset($form_state['storage']['json_object']);
+    }
+    else {
+      dsm('Found Items');
+      
+      $output = '<br><br>';
+      foreach ($json->items as $idx => $item) {
+        $output .= l($item->title, $item->link);
+        $output .= '<br>' . $item->snippet . '<br><br>';
+      }
+  
+      $form_state['storage']['json_output'] = $output;
+      $form_state['storage']['json_object'] = $json;
+      }
+  }
+  
+}
